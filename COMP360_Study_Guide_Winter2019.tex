@@ -57,7 +57,7 @@
 
 \part{Preliminaries}
 \section{Disclaimer}
-These notes are curated from Professor Paul Kry COMP557 lectures at McGill University. They are for study purposes only. They are not to be used for monetary gain.
+These notes are curated from Professor Bruce Reed COMP360 lectures at McGill University. They are for study purposes only. They are not to be used for monetary gain.
 \section{About This Guide}
 I make my notes freely available for other students as a way to stay accountable for taking good notes. If you spot anything incorrect or unclear, don't hesitate to contact me via Facebook or e-mail at \url{http://francispiche.ca/contact/}
 
@@ -108,7 +108,179 @@ The entropy of a probability distribution $p$ on the letters of an alphabet is
 $$\sum_{x \in S}-p(x)log_2(x)$$
 The Huffman code is actually always within 1 bit per symbol of the entropy, and we cannot do better than entropy. 
 
+\section{JPEG Compression}
+JPEG compression is less of a predefined algorithm than a selection of subroutines. Some of these subroutines are mandatory for the overall result and some are optional. Often there is a tradeoff between image quality retention and the degree to which we compress. 
+\\ \linebreak
+ Often, due to these tradeoffs, websites will send multiple images of increasing quality. 
+\subsection{Discretization of Images}
+For black and white (grey scale) images, if an image is a grid of pixels, then each pixel holds one value. This value is the intensity of the grey. 255 would be white, whereas 0 would be black. 
+\\ \linebreak
+For color images, we need more information. We instead combine 3 primary colours Red, Green, Blue (RGB). 
+\\ \linebreak
+\textit{Side note: if you're interested, my COMP557 (Computer Graphics) guide has a section on colour theory which I thought was really cool. It explains why we chose RGB over some other colours).}
+\\ \linebreak
+
+\subsection{JPEG Compression Algorithm}
+The main goal is to throw away as much information as possible while keeping the image looking as close to the original as possible.
+\\ \linebreak
+\subsubsection{Step 1: RGB to YCC Encoding}
+The first step is to convert from RGB to a different encoding, called $YC_RC_B$ (luminance, chrominance-red, chrominance-blue). The reason for this is because the human eye picks up more on "brightness" information than colour information. So, encoding this way allows us to separate the Y ("brightness"/luminance) from the colour/chrominance. This allows for the colour information to be stored at a lower resolution (with less information) without losing too much visual information.
+\\ \linebreak
+First, we use the following constants (determined experimentally, just take them for granted). 
+$$Y = 0.2990R + 0.5780G + 0.1440B$$
+$$ C_B = -0.1687R - 0.331G + 0.5B + 2^{BitDepth-1}$$
+$$ C_R = 0.5R - 0.4187G - 0.0831B + 2^{BitDepth-1}$$
+
+\subsubsection{Step 2: Compress Chromaticity}
+The idea here is to downsize the amount of information we need by averaging the $C_B$ and $C_R$ values of adjacent pixels together. If we do this by taking 2x2 blocks of pixels, and averaging them into 1 pixel, we save 50\% space.
+\\ \linebreak
+We save 50\% since we have 3 values per pixel originally. So $3P$ total numbers, where $P$ is the number of pixels. Next, we cut the number of pixels into 4 for both $C_R$ and $C_B$ so $2(P/4)$. In total we now have $3P/2$ which is half of $3P$.
+\\ \linebreak
+
+\subsubsection{Step 3: Discrete Cosine Transform}
+This is where things get messy. To explain this, I really recommend \href{https://www.youtube.com/watch?v=Q2aEzeMDHMA}{this video} (hyperlink) by Computerphile. Honestly, it does a better job than I ever could, but I'll give it a short either way.
+\\ \linebreak
+We now divide the image into 8x8 blocks of pixels. The DCT (discrete cosine transform) is applied to each block. The effect is that the spatial image is now a sort of "frequency map". The frequency being how often the luminance is changing from low to high. The idea is that by removing some of the high frequency information we can still maintain the resemblance of the original.
+\\ \linebreak
+When two cosine waves are added, a new wave is created. So, we use 64 (8x8) cosine waves with specially determined weights to try to recreate the image. The top left of these cosine waves is concidered the DC (direct current) wave, and contributes the most to the final image. (usually). All the other waves are called AC (alternating current). As you move right and down, the waves are of increasing frequency in the x direction (right) and y direction (down).
+\\ \linebreak
+By superimposing some linear combination of these waves we can recreate the original image. 
+\\ \linebreak
+To find these values, we must first "normalize" our data. Currently the pixel values run from 0-255, so we need to subtract 128 so that they are centered about 0. -127 to 127. We do this since cosine runs from -1 to 1. 
+\\ \linebreak
+The 2x2 example is as follows:
+\\
+If we have a 2x2 block, we need a combination of 4 cosine waves. This will be some linear combination
+$$\begin{pmatrix}
+p_1 && p_2 \\
+p_3 && p_4
+\end{pmatrix} = x_1\begin{pmatrix}
+1 && 1 \\ 1 && 1
+\end{pmatrix} + x_2\begin{pmatrix}
+1 && -1 \\ -1 && 1
+\end{pmatrix} + x_3\begin{pmatrix}
+1 && 1 \\ -1 && -1
+\end{pmatrix} + x_4\begin{pmatrix}
+1 && -1 \\ 1 && -1
+\end{pmatrix}$$
+Note that those are the 4 unit cosine matrices. 
+\\
+We can solve this system of equations by combining into one matrix:
+$$\begin{pmatrix}
+1 && 1 && 1 && 1 \\
+1 && -1 && 1 && -1 \\
+1 && -1 && -1 && 1\\
+1 && 1 && -1 && -1
+\end{pmatrix}\begin{pmatrix}
+x_1 \\ x_2 \\ x_3 \\ x_4
+\end{pmatrix} = \begin{pmatrix}
+p_1 \\ p_2 \\ p_3 \\ p_4
+\end{pmatrix}$$
+By inverting the left matrix, and multiplying on both sides, we can solve for $x_1, x_2, x_3, x_4$. This will give us the weights for each of the cosine waves that will give the same values as the original image $p_1, p_2, p_3, p_4$.
+
+\subsubsection{Step 4: Quantization}
+Here is where much of the data is thrown away (and some is lost!). This step is lossy. Up until this point, we have retained all original data and the process has been reversible.
+\\ \linebreak
+We will now "quantize" the DCT coefficients computed in the last step to get rid of information. This is done by dividing each coefficient by some number. This number is given by a Quantization table (predetermined). Depending on how much you want to compress (and lose) you can multiple the table by a scale. So the final DCT transform we will apply is given by:
+$$DCT_{quantized} = ROUND(\frac{DCT_{coef}}{Q*Scale})$$
+Where $Q$ is from the quantization table. The Scale determines how much quality you want to retain. (100 being perfect quality, 50 being half quality etc.). The ROUND will get rid of all the almost-zero (negligible) values. This is where we lose the data (and gain the compression). 
+\\ \linebreak
+\subsubsection{Step 5: Huffman Encoding}
+The final values are now encoded using the Huffman algorithm, sent, and decoded on the other side, by reversing the process. Of course, the values that come out the other end are not exact, but close enough that the human eye probably wont pick up on it in cases of slight compression.
+ 
+\subsection{Discrete Fourier Transform}
+An alternative to the DCT is the Discrete Fourier Transform (DFT). It is applied the same way as described above, except that we use a different matrix (and method for finding the coefficients).
+\\ \linebreak
+I'm going to assume you're familiar with complex numbers and the complex plane, but not with roots of unity. 
+
+
+\subsubsection{Roots of Unity}
+To understand the DFT, we first need to understand Roots of Unity.
+\\ \linebreak
+A root of unity is a complex number which, when raised to a positive integer power, results in 1. 
+\\ \linebreak
+For any positive integer $n$, the $nth$ roots of unity are complex solutions to $\omega^n = 1$ and there are $n$ solutions to the equation. These solutions (found by Eulers formula) are $\omega^k_n = e^{\frac{2k\pi i}{n}}$
+with $k = 0, ..., n-1$.
+\\ \linebreak
+Some facts:\\
+$$\omega^k_n \omega^j_n = \omega^{i+j}_n$$
+$$\omega^n_n = 1 \Rightarrow \omega^{j+n}_n = \omega^j_n$$
+$$\omega^{\frac{n}{2}}_n = -1 \Rightarrow \omega^{j+\frac{n}{2}}_n = -\omega^j_n$$
+$$\sum_{m=0}^n-1 \omega_n^{(j+k)m} = 0$$
+this last one is because for each $\omega_n^k$ there is a corresponding $\omega_n^j$ such that $\omega_k = -\omega_n^j$ Where $j = k + n/2$
+\\ \linebreak
+\subsubsection{The Transform}
+Now we need to find coefficients so that
+$$b_k = \sum_{j=0}^{n-1}M_j\omega_n^{jk}$$
+$$\begin{pmatrix}
+1 && 1 && \dots && 1 && 1 \\
+1 && \omega_n^1 &&  \dots && \omega^{n-2}_n && \omega^{n-1}_n \\
+ \vdots && \vdots && \ddots && \vdots && \vdots \\
+1 && \omega^{n-2}_n && \dots && \omega^{(n-2)(n-2)}_n && \omega^{(n-1)(n-2)}_n \\
+1 && \omega^{(n-1)}_n && \dots && \omega^{(n-2)(n-1)}_n && \omega^{(n-1)(n-1)}_n
+\end{pmatrix}
+\begin{pmatrix}
+M_0 \\
+M_1 \\
+\vdots \\
+M_{n-1}
+\end{pmatrix} = 
+\begin{pmatrix}
+b_1 \\
+\vdots\\
+b_{n-1}
+\end{pmatrix}
+$$ 
+Similarly DCT, we can solve for the matrix inverse and multiply it by $M$ to find $b$.
+\\ \linebreak The inverse is:
+$$
+\frac{1}{n}
+\begin{pmatrix}
+	1 && 1 && \dots && 1 && 1 \\
+	1 && \omega_n^{n-1} &&  \dots && \omega^{(n-2)(n-1)}_n && \omega^{(n-1)(n-1)}_n \\
+	\vdots && \vdots && \ddots && \vdots && \vdots \\
+	1 && \omega^{2}_n && \dots && \omega^{(n-2)2}_n && \omega^{(n-1)2}_n \\
+	1 && \omega^{(1)}_n && \dots && \omega^{(n-2)}_n && \omega^{(n-1)}_n \\
+\end{pmatrix}
+$$
+Notice that the inverse is just the vertically flipped version of the original, with its entries multiplied by 1/n. So it can be quite fast to compute this inverse.
+\\ \linebreak
+Now, because of the special structure of the inverse, we can compute the multiplication of by a vector in $nlog(n)$ time in what's known as the Fast Fourier Transform.
+\\ \linebreak
+
+\subsubsection{Fast Fourier Transform}
+The goal of this divide and conquer algorithm is to quickly multiply some matrix $A$ by some vector $<a_0,\dots,a_{n-1}>$. Note that this is going to give a resulting vector $A(x)$. We can try to split up the problem into dealing with odd and even indices for the vector coefficients. Then the final vector $A(x) = xA_{odd}(x^2) + A_{even}(x^2)$ Why these terms? Because matrix multiplication by a vector is just like a polynomial. So the polynomial version of this is:
+$$ A(x) = \sum_{j=0}^{n-1}a_jx^j$$
+Then, we can split this into:
+$$ A_{even}(x) = \sum_{j=0}^{\frac{n}{2} -1} a_{2j}x^{2j} = A(x^2)$$
+and
+$$ A_{odd}(x) = \sum_{j=1}^{\frac{n}{2} -2}a_{2j+1}x^{2j+1} = xA(x^2)$$
+ However, we also are now operating on $x^2$ not $x$. In order to get the runtime down from $O(n^2)$ to $O(nlog(n))$ we need to have inputs $x^2$ to our polynomial function $A(x^2)$ such that $x^2 = x$.
+\\ \linebreak
+This is where the roots of unity come in. Since $\omega_n^{j + n/2} = -\omega_n^{j}$, we have that $\omega_n^{(j + n/2)^2} = \omega_n^{j^2}$ which cuts our input in half.
+\\ \linebreak
+We are now operating on a set of size $n/2$, with linear processing time at each step, which is $O(nlog(n))$ by the master theorem.
+\section{Fast Matrix Multiplication}
+
+
 \section{Google Page Rank}
+With so much information available, how can we rank results by relevance? 
+\\ \linebreak
+\subsection{Search Engine Basics}
+Three parts:
+\begin{itemize}
+	\item 1. Crawlers which map the information on pages, links between them and collect as much data as possible. This is a continuous process.
+	\item 2. A database indexes all this information
+	\item 3. A person makes a query, and relevancy software figures out what the best results are. (Which are relevant to the user).
+\end{itemize}
+Iterpreting a query involves applying natural language processing to extract the meaning, and figure out the type of information you want to generate keywords with which to query the index.
+\\ \linebreak
+
+\subsection{What is PageRank?}
+There are many important (200+) factors which Google uses to rank results. \textbf{PageRank} is the factor of \textit{trust} the web community has in the page. Trust is measured based on a few factors. 
+\\ \linebreak
+We could try to just see how many links point to a given page. This is called the \textbf{indegree} of a page. We can refine this with a weighted indegree, in which if someone with a high indregree points to someone, then that link is worth more. We can generalize by 
+
 \section{Simplex Algorithm for Linear Programming}
 
 \end{document}
